@@ -19,13 +19,23 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import ReactSelect from "react-select"
 import type { StylesConfig, MultiValue } from "react-select"
-import { inviteMember, getOrganizationMembers, getCourses, enrollStudent, type OrganizationMember, type CourseWithRelations } from "@/lib/api-calls"
+import { inviteMember, getOrganizationMembers, getCourses, enrollStudent, deleteMember, type OrganizationMember, type CourseWithRelations } from "@/lib/api-calls"
 import { getPrimaryOrganization, getCurrentUser } from "@/lib/session"
 import { isSuperAdmin } from "@/lib/permissions"
 import { toast } from "sonner"
@@ -44,6 +54,8 @@ export default function EmployeePage() {
   const [inviteResults, setInviteResults] = useState<Array<{ email: string; status: "success" | "error"; message: string }>>([])
   const [isParsingCsv, setIsParsingCsv] = useState(false)
   const [csvFileName, setCsvFileName] = useState<string | null>(null)
+  const [memberToDelete, setMemberToDelete] = useState<OrganizationMember | null>(null)
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false)
 
   const primaryOrganization = getPrimaryOrganization()
   const organizationId = primaryOrganization?.id || ""
@@ -443,6 +455,46 @@ export default function EmployeePage() {
     },
   })
 
+  // Delete member mutation
+  const deleteMemberMutation = useMutation({
+    mutationFn: (memberId: string) => {
+      const currentUser = getCurrentUser()
+      return deleteMember(memberId, currentUser?.id)
+    },
+    onSuccess: (response) => {
+      if (response.data?.success) {
+        const memberName = memberToDelete
+          ? getUserFullName(memberToDelete.firstName, memberToDelete.lastName, memberToDelete.name) || memberToDelete.email
+          : "Member"
+        toast.success("Member removed successfully", {
+          description: `${memberName} has been removed from the organization.`,
+        })
+        queryClient.invalidateQueries({ queryKey: ["organization-members", organizationId] })
+        setOpenDeleteDialog(false)
+        setMemberToDelete(null)
+      } else if (response.error) {
+        const errorMsg = typeof response.error === "string" ? response.error : response.error?.message || "Failed to remove member"
+        toast.error("Failed to remove member", { description: errorMsg })
+      }
+    },
+    onError: (error: any) => {
+      console.error("Error removing member:", error)
+      const errorMessage = typeof error?.message === "string" ? error.message : "Failed to remove member. Please try again."
+      toast.error("Failed to remove member", { description: errorMessage })
+    },
+  })
+
+  const handleDeleteClick = (member: OrganizationMember) => {
+    setMemberToDelete(member)
+    setOpenDeleteDialog(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (memberToDelete) {
+      deleteMemberMutation.mutate(memberToDelete.id)
+    }
+  }
+
   const handleOpenEnroll = (member: OrganizationMember) => {
     setSelectedMember(member)
     setSelectedCourses([])
@@ -790,6 +842,46 @@ export default function EmployeePage() {
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* Delete Member Confirmation Dialog */}
+          <AlertDialog open={openDeleteDialog} onOpenChange={setOpenDeleteDialog}>
+            <AlertDialogContent className="bg-white border-[#DE1915]/20">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-[#DE1915]">Remove Member</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to remove{" "}
+                  <strong>
+                    {memberToDelete
+                      ? getUserFullName(memberToDelete.firstName, memberToDelete.lastName, memberToDelete.name) || memberToDelete.email
+                      : "this member"}
+                  </strong>{" "}
+                  from your organization? This action cannot be undone and will remove all their access to this organization.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel 
+                  className="border-[#65B32E]/30 text-[#65B32E] hover:bg-[#65B32E]/10"
+                  disabled={deleteMemberMutation.isPending}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmDelete}
+                  className="bg-[#DE1915] text-white hover:bg-[#DE1915]/90"
+                  disabled={deleteMemberMutation.isPending}
+                >
+                  {deleteMemberMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Removing...
+                    </>
+                  ) : (
+                    "Remove Member"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         <Card className="border-[#65B32E]/20 bg-white">
@@ -847,7 +939,11 @@ export default function EmployeePage() {
                             <UserPlus size={16} className="mr-2" />
                             Enroll Student
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-[#DE1915] hover:bg-[#DE1915]/10">
+                          <DropdownMenuItem 
+                            onClick={() => handleDeleteClick(employee)} 
+                            className="text-[#DE1915] hover:bg-[#DE1915]/10"
+                            disabled={employee.role === "superadmin"}
+                          >
                             <Trash2 size={16} className="mr-2" />
                             Remove
                           </DropdownMenuItem>

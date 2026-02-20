@@ -427,6 +427,18 @@ async function handleApiCalls<T> (response: Response): Promise<IApiResponse<T>> 
     }));
   };
 
+  export const deleteMember = async (memberId: string, requesterUserId?: string): Promise<IApiResponse<{ success: boolean; message: string; member: { id: string; email: string; name: string } }>> => {
+    const baseUrl = process.env.NEXT_PUBLIC_BROWSER_URL || "";
+    const url = new URL(`${baseUrl}/api/organizations/members/${memberId}`);
+    if (requesterUserId) {
+      url.searchParams.append("requesterUserId", requesterUserId);
+    }
+    return handleApiCalls(await fetch(url.toString(), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    }));
+  };
+
   export type OrganizationMember = {
     id: string;
     userId: string;
