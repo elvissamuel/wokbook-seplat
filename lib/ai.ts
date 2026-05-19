@@ -15,6 +15,19 @@ if (!apiKey) {
 
 export const geminiModel = google("gemini-2.0-flash")
 
+/** Strip markdown fences / document wrappers so Jodit receives a clean HTML fragment. */
+function normalizeLessonHtml(raw: string): string {
+  let html = raw.trim()
+  html = html.replace(/^```(?:html)?\s*/i, "")
+  html = html.replace(/\s*```$/i, "")
+  html = html.trim()
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+  if (bodyMatch) {
+    html = bodyMatch[1].trim()
+  }
+  return html
+}
+
 // Generate lesson content using Gemini
 export async function generateLessonContent(
   topic: string, 
@@ -40,30 +53,30 @@ export async function generateLessonContent(
 
     prompt += `This is a ${courseLevel} level course.\n\n`
 
-    prompt += `Requirements:\n`
-    prompt += `- Create structured, easy-to-follow content in Markdown format\n`
-    prompt += `- Use proper Markdown syntax: #, ##, ### for headings, **bold**, *italic*, \`code\`, \`\`\`code blocks\`\`\`\n`
-    prompt += `- For unordered lists, use a single hyphen (-) followed by a space, NOT asterisks (*). Example: "- Item 1" not "* Item 1"\n`
-    prompt += `- For ordered lists, use numbers followed by a period and space: "1. Item 1"\n`
-    prompt += `- Do NOT mix asterisks with hyphens in list formatting. Use only hyphens (-) for bullet points\n`
-    prompt += `- When using bold text within list items, format as: "- **Term:** Definition" not "* **Term:** Definition"\n`
+    prompt += `Output format (critical):\n`
+    prompt += `- Return ONLY valid HTML suitable for a WYSIWYG rich-text editor (Jodit). Do NOT use Markdown.\n`
+    prompt += `- Do NOT wrap output in \`\`\` code fences, and do not include <html>, <head>, or <body> tags.\n`
+    prompt += `- Use semantic tags: <h2> for the main title, <h3> for section headings, <p> for paragraphs.\n`
+    prompt += `- Use <ul><li>...</li></ul> for bullet lists and <ol><li>...</li></ol> for numbered lists.\n`
+    prompt += `- Use <strong> for bold, <em> for italic, <u> for underline only when needed.\n`
+    prompt += `- Use <code> for inline code and <pre><code>...</code></pre> for multi-line code examples.\n`
+    prompt += `- Use <hr> sparingly to separate major sections if helpful.\n`
+    prompt += `- Do not use Markdown symbols (#, **, *, -, backticks) anywhere in the output.\n\n`
+
+    prompt += `Content requirements:\n`
+    prompt += `- Create structured, easy-to-follow lesson content\n`
     prompt += `- Include practical examples where relevant\n`
-    prompt += `- Use clear, engaging language\n`
-    prompt += `- Ensure content is appropriate for the educational context\n`
-    prompt += `- Structure content with headings and paragraphs\n`
-    prompt += `- Use bullet points or numbered lists for key concepts\n`
-    prompt += `- Add emphasis with **bold** and *italic* where appropriate\n`
-    prompt += `- Use moderate spacing between sections - avoid excessive line breaks\n`
-    prompt += `- Keep paragraphs concise and well-structured\n`
+    prompt += `- Use clear, engaging language appropriate for the educational context\n`
+    prompt += `- Keep paragraphs concise; avoid empty <p></p> tags and excessive <br> tags\n`
     prompt += `- Include learning objectives, key concepts, and practical examples\n`
 
-    prompt += `\nGenerate the lesson content in Markdown format now. Start with a main heading and structure the content properly:`
+    prompt += `\nGenerate the lesson content as an HTML fragment now. Start with an <h2> main heading:`
 
     const { text } = await generateText({
       model: geminiModel,
       prompt,
     })
-    return text
+    return normalizeLessonHtml(text)
   } catch (error) {
     console.error("Error generating lesson content:", error)
     throw error
